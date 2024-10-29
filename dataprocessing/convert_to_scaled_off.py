@@ -35,7 +35,7 @@ def to_off(path):
 
     try:
         
-        v, f = igl.read_triangle_mesh(path)
+        v, f = igl.read_triangle_mesh(path) # 三角形网格,v表示顶点,由顶点坐标[[x,y,z]……]表示, f表示三角形面, 由[[0,1,2]……]保存着顶点的索引, 表示该面由第0,1,2个顶点组成
 
         bb_max = v.max(axis=0, keepdims=True)
         bb_min = v.min(axis=0, keepdims=True)
@@ -43,7 +43,7 @@ def to_off(path):
         #print(bb_max-bb_min)
         if data_type == 'c3d':
             v/=40
-        elif data_type != 'arm':
+        elif data_type != 'arm': # normalize robot c-space to [−0.5, 0.5] on each dimension
             centers = (bb_max+bb_min)/2.0
             v = v-centers
             v = v/(bb_max-bb_min)

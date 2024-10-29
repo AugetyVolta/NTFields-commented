@@ -48,7 +48,7 @@ f_0, f_1 = womodel.network.env_encoder(grid)
 
 for i in range(5):
 
-    start_goal = np.array([[-6,-4,-6,6,7,-2.5]])
+    start_goal = np.array([[-6,-4,-6,6,7,-2.5]]) # 设置起始点
     XP=start_goal
     XP = Variable(Tensor(XP)).to('cuda')
     XP=XP/20.0

@@ -19,10 +19,10 @@ def arm_rand_sample_bound_points(numsamples, dim,
     dtype = torch.float32
 
     chain = pk.build_serial_chain_from_urdf(
-        open(out_path_+'/'+path_name_+".urdf").read(), end_effect_)
+        open(out_path_+'/'+path_name_+".urdf").read(), end_effect_) # end_effect是末端执行器，于指定链的末端部分
     chain = chain.to(dtype=dtype, device=d)
 
-    scale = 0.9 * math.pi/0.5
+    scale = 0.9 * math.pi/0.5 # 这个缩放怎么缩的? TODO
     #base = torch.from_numpy(np.array([[0, -0.5*np.pi, 0.0, -0.5*np.pi,0.0,0.0]])).cuda()
     #vertices = vertices*2.5
     
@@ -40,10 +40,10 @@ def arm_rand_sample_bound_points(numsamples, dim,
     OutsideSize = numsamples + 10
     WholeSize = 0
     while OutsideSize > 0:
-        P  = torch.rand((2*numsamples,dim),dtype=torch.float32, device='cuda')-0.5
+        P  = torch.rand((2*numsamples,dim),dtype=torch.float32, device='cuda')-0.5  # 生成的是dim个角度信息,表示机器人关节的旋转
         dP = torch.rand((2*numsamples,dim),dtype=torch.float32, device='cuda')-0.5
         rL = (torch.rand((2*numsamples,1),dtype=torch.float32, device='cuda'))*np.sqrt(3.)
-        nP = P + torch.nn.functional.normalize(dP,dim=1)*rL
+        nP = P + torch.nn.functional.normalize(dP,dim=1)*rL # 归一化,获取终点机器人关节旋转角度信息
 
         PointsInside = torch.all((nP <= 0.5),dim=1) & torch.all((nP >= -0.5),dim=1)
 
@@ -56,15 +56,15 @@ def arm_rand_sample_bound_points(numsamples, dim,
 
         
 
-        th_batch = scale*x0#+base
+        th_batch = scale*x0#+base # 将有效点x0进行缩放，准备关节角度批次th_batch
         whole_p = []
         batch_size = 80000
         for batch_id in range(math.floor(x0.shape[0]/batch_size)+1):
             if batch_id*batch_size==x0.shape[0]:
                 break
             #print(batch_id)
-            tg_batch = chain.forward_kinematics(
-                th_batch[batch_id*batch_size:
+            tg_batch = chain.forward_kinematics( # 返回整个运动链的位姿信息
+                th_batch[batch_id*batch_size:   # th_batch [80000,4],对应关节的角度信息
                         min((batch_id+1)*batch_size,x0.shape[0]),:]
                         , end_only = False)
 
@@ -74,27 +74,28 @@ def arm_rand_sample_bound_points(numsamples, dim,
             for tg in tg_batch:
                 print(iter,tg)
                 if iter>1:
-                    v = np.load(out_path_+'/meshes/collision/'+tg+'.npy')
-                    nv = np.ones((v.shape[0],4))
+                    v = np.load(out_path_+'/meshes/collision/'+tg+'.npy') # 每个link对应的坐标
+                    nv = np.ones((v.shape[0],4)) # 最后一列为齐次坐标
                     pointsize = pointsize+v.shape[0]
 
                     nv[:,:3]=v[:,:3]
-                    m = tg_batch[tg].get_matrix()
+                    m = tg_batch[tg].get_matrix() # 获取当前链节的变换矩阵，示该链节在世界坐标系或父坐标系中的位置和方向，包含旋转和平移信息 [80000, 4, 4]
                     #print(m.shape)
-                    t=torch.from_numpy(nv).float().cuda()
-                    p=torch.matmul(m[:],t.T)
+                    t=torch.from_numpy(nv).float().cuda() # [v.shape[0],4]
+                    p=torch.matmul(m[:],t.T) # 将link对应坐标信息转到世界坐标系 # [80000, 4, v.shape[0]]
                     #p=p.cpu().numpy()
-                    p = torch.permute(p, (0, 2, 1)).contiguous()
+                    p = torch.permute(p, (0, 2, 1)).contiguous() # 重新排列p的维度并确保它在内存中是连续的 # [80000, v.shape[0], 4]
                     #p=np.transpose(p,(0,2,1))
                     p_list.append(p)
                     del m,p,t,nv, v
                 iter = iter+1
             #print(pointsize)
             #p = np.concatenate(p_list,axis=1)
-            p = torch.cat(p_list, dim=1)
-            p = torch.reshape(p,(p.shape[0]*p.shape[1],p.shape[2])).contiguous()
-            query_points = p[:,0:3].contiguous()
-            query_points = 0.4*query_points.unsqueeze(dim=0)
+            p = torch.cat(p_list, dim=1) # 把所有link的变换后的坐标组和起来在dim=1上 [80000, pointsize, 4]
+            # print(p.shape)
+            p = torch.reshape(p,(p.shape[0]*p.shape[1],p.shape[2])).contiguous() # [80000*pointsize, 4]
+            query_points = p[:,0:3].contiguous() # 第四列不需要
+            query_points = 0.4*query_points.unsqueeze(dim=0) # 这个0.4怎么来？ TODO
             bvh = bvh_distance_queries.BVH()
 
             torch.cuda.synchronize()
@@ -104,8 +105,8 @@ def arm_rand_sample_bound_points(numsamples, dim,
             
             distance = torch.sqrt(distance).squeeze()
 
-            distance,_ = torch.min(torch.reshape(distance, (-1, pointsize)), dim=1)
-            #distance = distance.detach().cpu().numpy()
+            distance,_ = torch.min(torch.reshape(distance, (-1, pointsize)), dim=1) # 每pointsize个距离，就是一个姿态theta下机器人上所有点距离环境的距离 [80000,pointsize]--min-->[80000]
+            #distance = distance.detach().cpu().numpy()                             # 取最小,表示机器人关于环境的距离
 
             #print(distance.shape)
             whole_p.append(distance)
@@ -120,7 +121,6 @@ def arm_rand_sample_bound_points(numsamples, dim,
         x0 = x0[where_d]
         x1 = x1[where_d]
         y0 = unsigned_distance[where_d]
-        
         #print(x1.shape[0])
         if(x1.shape[0]<=1):
             continue
@@ -184,7 +184,7 @@ def arm_rand_sample_bound_points(numsamples, dim,
         y1 = unsigned_distance
 
         x = torch.cat((x0,x1),1)
-        y = torch.cat((y0.unsqueeze(1),y1.unsqueeze(1)),1)
+        y = torch.cat((y0.unsqueeze(1),y1.unsqueeze(1)),1) # y是[xxx]，需要弄一个dim1出来
 
         X_list.append(x)
         Y_list.append(y)
@@ -221,19 +221,19 @@ def point_rand_sample_bound_points(numsamples, dim,
     #Y  = torch.zeros((numsamples,2)).cuda()
     X_list = []
     Y_list = []
-    OutsideSize = numsamples + 2
+    OutsideSize = numsamples + 2 # 为了使循环可以进行, 因此让OutsideSize非0
     WholeSize = 0
     while OutsideSize > 0:
-        P  = torch.rand((2*numsamples,dim),dtype=torch.float32, device='cuda')-0.5
-        dP = torch.rand((2*numsamples,dim),dtype=torch.float32, device='cuda')-0.5
-        rL = (torch.rand((2*numsamples,1),dtype=torch.float32, device='cuda'))*np.sqrt(3.)
-        nP = P + torch.nn.functional.normalize(dP,dim=1)*rL
+        P  = torch.rand((2*numsamples,dim),dtype=torch.float32, device='cuda')-0.5 # 生成起点, -0.5是为了限制在[-0.5,0.5]，rand的范围是[0,1]
+        dP = torch.rand((2*numsamples,dim),dtype=torch.float32, device='cuda')-0.5 
+        rL = (torch.rand((2*numsamples,1),dtype=torch.float32, device='cuda'))*np.sqrt(3.) # rL和dP组成了一个向量方向
+        nP = P + torch.nn.functional.normalize(dP,dim=1)*rL # 由P+dP*rL生成终点
 
-        PointsInside = torch.all((nP <= 0.5),dim=1) & torch.all((nP >= -0.5),dim=1)
+        PointsInside = torch.all((nP <= 0.5),dim=1) & torch.all((nP >= -0.5),dim=1) # 找到符合范围的点
         
 
-        x0 = P[PointsInside,:]
-        x1 = nP[PointsInside,:]
+        x0 = P[PointsInside,:] # 起点
+        x1 = nP[PointsInside,:] # 终点
 
         print(x0.shape[0])
         if(x0.shape[0]<=1):
@@ -247,10 +247,10 @@ def point_rand_sample_bound_points(numsamples, dim,
         torch.cuda.synchronize()
         distances, closest_points, closest_faces, closest_bcs= bvh(triangles, query_points)
         torch.cuda.synchronize()
-        unsigned_distance = torch.sqrt(distances).squeeze()
+        unsigned_distance = torch.sqrt(distances).squeeze() # unsigned distance 物体内部的点距离都表示为0，物体外侧的点则为正数，存储到最近物体的距离 TODO
         
         where_d          = (unsigned_distance <=  margin) & \
-                                (unsigned_distance >=  offset)
+                                (unsigned_distance >=  offset) # 筛选满足条件的,满足边界条件
         x0 = x0[where_d]
         x1 = x1[where_d]
         y0 = unsigned_distance[where_d]
@@ -266,10 +266,10 @@ def point_rand_sample_bound_points(numsamples, dim,
         distances, closest_points, closest_faces, closest_bcs= bvh(triangles, query_points)
         torch.cuda.synchronize()
         #unsigned_distance = abs()
-        y1 = torch.sqrt(distances).squeeze()
+        y1 = torch.sqrt(distances).squeeze() # 为什么这个不用筛选 TODO
 
         x = torch.cat((x0,x1),1)
-        y = torch.cat((y0.unsqueeze(1),y1.unsqueeze(1)),1)
+        y = torch.cat((y0.unsqueeze(1),y1.unsqueeze(1)),1) # y是[xxx]，需要弄一个dim1出来
 
         X_list.append(x)
         Y_list.append(y)
@@ -285,7 +285,7 @@ def point_rand_sample_bound_points(numsamples, dim,
 
     sampled_points = X.detach().cpu().numpy()
     distance = Y.detach().cpu().numpy()
-    speed0 = velocity_max*np.clip(distance[:,0] , a_min = offset, a_max = margin)/margin
+    speed0 = velocity_max*np.clip(distance[:,0] , a_min = offset, a_max = margin)/margin # 计算速度
     speed1 = velocity_max*np.clip(distance[:,1] , a_min = offset, a_max = margin)/margin
     speed  = np.zeros((distance.shape[0],2))
     speed[:,0]=speed0
@@ -313,9 +313,9 @@ def sample_speed(path, numsamples, dim):
                 for line in f:
                     data = line.split()
                     if iter==0:
-                        dim = int(data[0])
+                        dim = int(data[0]) # dim文件第一行
                     else:
-                        end_effect = data[0]
+                        end_effect = data[0] # dim文件第二行Link_xx
                         #print(end_effect)
                     iter=iter+1
         file_name = os.path.splitext(os.path.basename(path))[0]
@@ -334,8 +334,8 @@ def sample_speed(path, numsamples, dim):
         velocity_max = 1
         
         if task_name=='c3d' or task_name=='test':
-            margin = limit/5.0
-            offset = margin/10.0 
+            margin = limit/5.0 # max dis
+            offset = margin/10.0 # min dis
         elif task_name=='gibson':
             margin = limit/10.0
             offset = margin/7.0 

@@ -73,7 +73,7 @@ for ii in range(5):
 point1.reverse()
 point=point0+point1
 
-xyz=torch.cat(point)*scale
+xyz=torch.cat(point)*scale # 有38个路径点
 
 d = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.float32
@@ -90,7 +90,7 @@ tg_batch = chain.forward_kinematics(xyz, end_only = False)
 p_list=[]
 iter = 0
 pointsize = 0
-for tg in tg_batch:
+for tg in tg_batch: 
     print(iter,tg)
     if iter>1:
         v = np.load(out_path_+'/meshes/collision/'+tg+'.npy')
@@ -108,8 +108,8 @@ for tg in tg_batch:
         p_list.append(p)
         del m,p,t,nv, v
     iter = iter+1
-
-p = torch.cat(p_list, dim=1)
+# 找到路径点(路径对应的机器人关节角度)对应的机器人表面点
+p = torch.cat(p_list, dim=1) # [38,50,4] 38个路径点,一个路径点对应50个机器人表面点
 p = torch.reshape(p,(p.shape[0]*p.shape[1],p.shape[2])).contiguous()
 query_points = p[:,0:3].contiguous()
 

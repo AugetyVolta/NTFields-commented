@@ -27,11 +27,11 @@ class _numpy2dataset(torch.utils.data.Dataset):
 def Database(PATH):
     
     try:
-        points = np.load('{}/sampled_points.npy'.format(PATH))
-        speed = np.load('{}/speed.npy'.format(PATH))
+        points = np.load('{}/sampled_points.npy'.format(PATH)) #(x0,y0,z0,x1,y1,z1)
+        speed = np.load('{}/speed.npy'.format(PATH)) #(s0,s1)
         occupancies = np.unpackbits(np.load('{}/voxelized_point_cloud_128res_20000points.npz'.format(PATH))['compressed_occupancies'])
-        input = np.reshape(occupancies, (128,)*3)
-        grid = np.array(input, dtype=np.float32)
+        input = np.reshape(occupancies, (128,)*3) # (128,128,128)体素占用网格，每个位置的值为 0（未占用）或 1（被占用）
+        grid = np.array(input, dtype=np.float32) # 转为浮点数
         #print(tau.min())
     except ValueError:
         print('Please specify a correct source path, or create a dataset')

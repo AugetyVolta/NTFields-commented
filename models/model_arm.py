@@ -78,7 +78,7 @@ class NN(torch.nn.Module):
         self.conv_in_bn = torch.nn.BatchNorm3d(16)
         self.device = device
 
-        feature_size = (1 +  16 ) * 7 * pointsize #+ 3
+        feature_size = (1 +  16 ) * 7 * pointsize #+ 3 就是下面算的17 * 50 * 7
 
         displacment = 0.0222#0.0222
         displacments = []
@@ -165,14 +165,14 @@ class NN(torch.nn.Module):
                 t=self.v_list[iter-2]
                 p=torch.matmul(m[:],t.T)
                 #p=p.cpu().numpy()
-                p = torch.permute(p, (2, 0, 1)).contiguous()
+                p = torch.permute(p, (2, 0, 1)).contiguous() # 注意这个和预处理地方的不一样
                 
                 p_list.append(p)
                 del m,p,t#,nv, v
             iter = iter+1
 
         p = torch.cat(p_list, dim=0)
-
+        # print(p.shape) [50, 20000, 4] 把一个角度信息对应的50个点放在第一个维度了，为了服务后面的操作
         query_points = p[...,0:3].contiguous()
         #print(query_points.shape)
         return 0.4*query_points
@@ -188,28 +188,29 @@ class NN(torch.nn.Module):
 
         p = torch.vstack((p0,p1))
 
-        p = self.FK(p)
+        p = self.FK(p) # 为一个角度信息扩充机器人上50个点
         
         p = torch.index_select(p, 2, torch.LongTensor([2,1,0]).to(self.device))
 
         p=2*p
         
         p = p.unsqueeze(0)
-        p = p.unsqueeze(1)
-        p = torch.cat([p + d for d in self.displacments], dim=2)
+        p = p.unsqueeze(1) # [1, 1, 50, 20000, 3]
+        p = torch.cat([p + d for d in self.displacments], dim=2) # [1, 1, 50*7, 20000, 3]
         #print(p.shape)
-
-        feature_0 = F.grid_sample(f_0, p, mode='bilinear', padding_mode='border')
-        feature_1 = F.grid_sample(f_1, p, mode='bilinear', padding_mode='border')
+        # f_0 [1, 1, 128, 128, 128]
+        # f_1 [1, 16, 128, 128, 128]
+        feature_0 = F.grid_sample(f_0, p, mode='bilinear', padding_mode='border') # [1, 1, 1, 50*7, 20000]
+        feature_1 = F.grid_sample(f_1, p, mode='bilinear', padding_mode='border') # [1, 16, 1, 50*7, 20000]
         
 
-        features = torch.cat((feature_0, feature_1), dim=1)  
+        features = torch.cat((feature_0, feature_1), dim=1) # [1, 17, 1, 50*7, 20000]
         
         shape = features.shape
         features = torch.reshape(features,
-                                 (shape[0], shape[1] * shape[3], shape[4]))  
+                                 (shape[0], shape[1] * shape[3], shape[4])) # [1, 17*50*7, 20000]
         #print(features.size())
-        features = torch.squeeze(features.transpose(1, -1))
+        features = torch.squeeze(features.transpose(1, -1)) # [20000, 17*50*7]
 
         features = self.act(self.fc_env0(features))
         features = self.act(self.fc_env1(features))
@@ -410,7 +411,7 @@ class Model():
         prev_state_queue = []
         prev_optimizer_queue = []
 
-        self.l0 = 500
+        self.l0 = 1
 
         self.l1 = 500
 
